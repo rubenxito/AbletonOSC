@@ -25,7 +25,7 @@ class SyncAbleton:
     def query(self, address, params=None):
         self.data_ready.clear()
         self.client.send_message(address, params if params else [])
-        if self.data_ready.wait(timeout=1.0):
+        if self.data_ready.wait(timeout=2.0):
             return self.last_response
         return None
 
@@ -60,8 +60,10 @@ def clean_filename(filename, force_mp3=False):
 
 
 def process_file_path(raw_path):
-    if not raw_path or not os.path.exists(raw_path):
-        return "Internal/MIDI", False
+    if not raw_path:
+        return '', True
+    if not os.path.exists(raw_path):
+        return raw_path, True
 
     folder, filename = os.path.split(raw_path)
 
