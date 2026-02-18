@@ -71,7 +71,12 @@ def process_file_path(raw_path):
     is_processed = "/Samples/Processed" in raw_path
     is_imported = "/Samples/Imported" in raw_path
 
-    # --- CASE 1: PROCESSED (Force MP3 check in Imported) ---
+    # --- CASE 1: IMPORTED (MP3 files not transformed) ---
+    if is_imported:
+        cleaned_name_mp3 = clean_filename(filename, force_mp3=True)
+        return cleaned_name_mp3, False
+
+    # --- CASE 2: PROCESSED (Force MP3 check in Imported) ---
     if is_processed:
         # Search for the MP3 version in the Imported sibling folder
         cleaned_name_mp3 = clean_filename(filename, force_mp3=True)
@@ -104,8 +109,8 @@ def process_file_path(raw_path):
 
     return final_path if exists else raw_path, is_missing
 
-
-def scan_project(n_tracks=10):
+### NOT FINISHED
+def get_session_clips(n_tracks=1):
     api = SyncAbleton()
     results = {}
 
@@ -135,11 +140,60 @@ def scan_project(n_tracks=10):
 
                 print_yellow(f"  Clip: {clip_name}")
                 print_gray(f"    Raw: {raw_path}")
-                print(f"    Stripped: {final_path}")
+                if final_path != raw_path:
+                    print(f"    Stripped: {final_path}")
 
     with open("session_analysis.json", "w", encoding='utf-8') as f:
         json.dump(results, f, indent=4)
 
+def get_arr_clips(n_tracks=8):
+    api = SyncAbleton()
+    results = {}
+
+    def get_clean_list(address, track_index):
+        """Fetches OSC data and strips the leading track_id from the list."""
+        raw = api.query(address, [track_index])
+        print_yellow(f"    Raw: {raw}")
+        if raw is None:
+            return []
+        if isinstance(raw, (list, tuple)):
+            # AbletonOSC returns [track_id, val1, val2...]
+            return list(raw[1:])
+        return [raw]
+
+    print(f"--- Deep Scan: Fetching Arrangement (Skipping Groups) ---")
+
+    for i in range(n_tracks):
+        # --- ESCAPE LOGIC ---
+        # Query if the track is foldable (a Group Track)
+        is_group = api.query("/live/track/get/is_foldable", [i])
+        if is_group:
+            print(f"Skipping Track {i}: (Group Track)")
+            continue
+
+        # 1. Identity the Track
+        track_name = api.query("/live/track/get/name", [i])
+        if track_name is None:
+            continue
+
+        # 2. Capture all timeline data
+        raw_names = get_clean_list("/live/track/get/arrangement_clips/name", i)
+        raw_starts = get_clean_list("/live/track/get/arrangement_clips/start_time", i)
+        raw_lengths = get_clean_list("/live/track/get/arrangement_clips/length", i)
+
+        # 3. Format into dictionary
+        track_clips = []
+        for n, s, l in zip(raw_names, raw_starts, raw_lengths):
+            track_clips.append({
+                "name": str(n),
+                "start_time": float(s),
+                "length": float(l)
+            })
+
+        results[track_name] = track_clips
+        print(f"Track {i} [{track_name}]: {len(track_clips)} clips added.")
+
+    return results
 
 if __name__ == "__main__":
-    scan_project(n_tracks=2)
+    get_arr_clips(n_tracks=2)
